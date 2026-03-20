@@ -74,8 +74,8 @@ export class GameEngine {
       if (this.gameState.inIntro) {
         const reminder = "I'm still here, Adventurer. Would you like a NEW quest, or shall we CONTINUE your previous adventure? Simply speak your choice.";
         await this.speak(reminder);
-        // Wait for speech to complete before activating mic
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        // speak() awaits audio completion; small extra buffer for echo
+        await new Promise(resolve => setTimeout(resolve, 800));
         this.emit('awaitingVoiceInput', { prompt: 'Still waiting for choice' });
       }
     }, 15000); // 15 seconds
@@ -100,7 +100,8 @@ export class GameEngine {
     await this.updateAmbientAudio();
 
     this.addEvent('Game loaded');
-    this.emit('gameLoaded', { message });
+    // Text already added to UI via speak() -> narration event
+    this.emit('gameLoaded', {});
 
     // Prompt player for action after loading saved game
     await this.promptAndListen('What would you like to do, Adventurer?', 'Ready for player action');
@@ -192,7 +193,7 @@ export class GameEngine {
 
     const message = "I didn't quite catch that. Would you like to start a NEW quest, or CONTINUE a previous adventure?";
     await this.speak(message);
-    await new Promise(resolve => setTimeout(resolve, 3000));
+    await new Promise(resolve => setTimeout(resolve, 800));
     this.emit('awaitingVoiceInput', { prompt: 'Waiting for NEW or CONTINUE' });
     return { success: false, message };
   }
@@ -231,7 +232,7 @@ export class GameEngine {
           else if (enemyHealthPct < 25) combatAdvice = 'The enemy staggers, nearly defeated! Press the attack! What will you do?';
           else combatAdvice = 'The battle rages on! Attack, Defend, Flee, or Use an item. What is your next move?';
           await this.speak(combatAdvice);
-          await new Promise(resolve => setTimeout(resolve, 3000));
+          await new Promise(resolve => setTimeout(resolve, 800));
           this.emit('awaitingVoiceInput', { prompt: 'Combat action needed' });
         }
 
@@ -259,7 +260,7 @@ export class GameEngine {
         let defAdvice = 'Your defense held! Now strike back with an attack, or continue defending!';
         if (defPlayerHealthPct < 30) defAdvice = 'You blocked the blow, but you are gravely wounded! Use a healing potion quickly, or try to flee!';
         await this.speak(defAdvice);
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        await new Promise(resolve => setTimeout(resolve, 800));
         this.emit('awaitingVoiceInput', { prompt: 'Combat action needed' });
         return result;
       }
@@ -284,9 +285,9 @@ export class GameEngine {
 
         await this.speak(result.message);
         // Prompt for next combat action after failed flee
-        await new Promise(resolve => setTimeout(resolve, 1500));
+        await new Promise(resolve => setTimeout(resolve, 1000));
         await this.speak('What is your next move?');
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        await new Promise(resolve => setTimeout(resolve, 800));
         this.emit('awaitingVoiceInput', { prompt: 'Combat action needed' });
       }
 
@@ -302,7 +303,7 @@ export class GameEngine {
 
     const message = "In combat, you can: attack, defend, flee, or use an item. What will you do?";
     await this.speak(message);
-    await new Promise(resolve => setTimeout(resolve, 3000));
+    await new Promise(resolve => setTimeout(resolve, 800));
     this.emit('awaitingVoiceInput', { prompt: 'Combat action needed' });
     return { success: false, message };
   }
@@ -416,8 +417,8 @@ export class GameEngine {
     await new Promise(resolve => setTimeout(resolve, 1500));
     const prompt = "What would you like to do next, Adventurer?";
     await this.speak(prompt);
-    // Wait for speech to complete before activating mic
-    await new Promise(resolve => setTimeout(resolve, 3000));
+    // speak() awaits audio completion; short buffer for echo
+    await new Promise(resolve => setTimeout(resolve, 800));
     this.emit('awaitingVoiceInput', { prompt: 'Ready for next action' });
 
     return { success: true, message: explorationNarrative, action: 'explored' };
@@ -440,7 +441,7 @@ export class GameEngine {
         : 'You feel strong and ready for battle!';
       const combatPrompt = `A ${encounter.enemy.name} stands before you! ${healthTip} You can ATTACK to strike the enemy, DEFEND to reduce incoming damage, FLEE to try escaping, or USE a potion. What will you do, Adventurer?`;
       await this.speak(combatPrompt);
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      await new Promise(resolve => setTimeout(resolve, 800));
       this.emit('awaitingVoiceInput', { prompt: 'Combat action needed' });
       
       return { success: true, message: combatResult.message + '\n\n' + combatPrompt, action: 'combat_started', encounter };
@@ -550,9 +551,9 @@ export class GameEngine {
     
     if (!result.success) {
       await this.speak(result.message);
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      await new Promise(resolve => setTimeout(resolve, 1000));
       await this.speak('What is your next move?');
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      await new Promise(resolve => setTimeout(resolve, 800));
       this.emit('awaitingVoiceInput', { prompt: 'Combat action needed' });
       return result;
     }
@@ -577,9 +578,9 @@ export class GameEngine {
     await this.speak(message);
     
     // Prompt for next combat action after using item
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    await new Promise(resolve => setTimeout(resolve, 1000));
     await this.speak('What is your next move?');
-    await new Promise(resolve => setTimeout(resolve, 3000));
+    await new Promise(resolve => setTimeout(resolve, 800));
     this.emit('awaitingVoiceInput', { prompt: 'Combat action needed' });
 
     return { success: true, message, combatContinues: true };
@@ -765,10 +766,9 @@ export class GameEngine {
     await this.speak(prompt);
     
     this.addEvent('Adventure began');
-    this.emit('narration', { message: firstLocationNarrative + '\n\n' + prompt });
-    
-    // Wait for speech to complete before activating mic
-    await new Promise(resolve => setTimeout(resolve, 3000));
+    // speak() already emits narration and awaits audio completion
+    // Short buffer for echo before enabling mic
+    await new Promise(resolve => setTimeout(resolve, 800));
     this.emit('awaitingVoiceInput', { prompt: 'Ready for player action' });
     
     return { success: true, message: firstLocationNarrative };
@@ -791,7 +791,11 @@ export class GameEngine {
 
   async speak(message) {
     if (this.speechService) {
+      // Emit narration BEFORE starting TTS so UI typewriter runs in parallel
+      this.emit('narration', { message });
       await this.speechService.speak(message);
+      // Small buffer after speech ends to avoid mic picking up echo
+      await new Promise(resolve => setTimeout(resolve, 300));
     }
   }
 
@@ -816,9 +820,11 @@ export class GameEngine {
   }
 
   async promptAndListen(prompt, context = 'Ready for input') {
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    await new Promise(resolve => setTimeout(resolve, 1000));
     await this.speak(prompt);
-    await new Promise(resolve => setTimeout(resolve, 3000));
+    // speak() already awaits audio completion + 300ms buffer
+    // Add extra buffer to prevent mic from capturing residual audio
+    await new Promise(resolve => setTimeout(resolve, 800));
     this.emit('awaitingVoiceInput', { prompt: context });
   }
 

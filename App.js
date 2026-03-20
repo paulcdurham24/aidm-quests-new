@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   StyleSheet,
   View,
@@ -8,7 +8,9 @@ import {
   SafeAreaView,
   Alert,
   AccessibilityInfo,
-  Platform
+  Platform,
+  Image,
+  Animated
 } from 'react-native';
 import { GameEngine } from './src/engine/GameEngine';
 import { AIService } from './src/services/AIService';
@@ -18,6 +20,86 @@ import { VoiceListener } from './src/services/VoiceListener';
 import { AudioService } from './src/services/AudioService';
 import { OPENAI_API_KEY, ELEVENLABS_API_KEY } from '@env';
 
+// Pixel art assets
+const LOGO = require('./src/assets/logo.png');
+const DM_AVATAR = require('./src/assets/dm_avatar.png');
+const PLAYER_AVATAR = require('./src/assets/player_avatar.png');
+
+// Typewriter text component for DM messages - syncs with TTS audio duration
+const TypewriterText = ({ text, style, onComplete, audioDuration }) => {
+  const [displayedText, setDisplayedText] = useState('');
+  const [isComplete, setIsComplete] = useState(false);
+  const startedRef = useRef(false);
+  const intervalRef = useRef(null);
+
+  useEffect(() => {
+    if (!text) return;
+    // Reset when text changes
+    startedRef.current = false;
+    setDisplayedText('');
+    setIsComplete(false);
+    if (intervalRef.current) clearInterval(intervalRef.current);
+
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [text]);
+
+  useEffect(() => {
+    // Only start once per text, and only when we have a valid duration
+    if (!text || startedRef.current) return;
+    if (!audioDuration || audioDuration <= 0) return;
+
+    startedRef.current = true;
+    const totalChars = text.length;
+    // Spread text across 95% of audio duration
+    const msPerChar = Math.max(10, Math.floor((audioDuration * 950) / totalChars));
+
+    let index = 0;
+    intervalRef.current = setInterval(() => {
+      index++;
+      setDisplayedText(text.slice(0, index));
+      if (index >= totalChars) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+        setIsComplete(true);
+        if (onComplete) onComplete();
+      }
+    }, msPerChar);
+  }, [text, audioDuration]);
+
+  // Fallback: if no duration arrives after 3s, start with default speed
+  useEffect(() => {
+    if (!text) return;
+    const fallbackTimer = setTimeout(() => {
+      if (!startedRef.current && text) {
+        startedRef.current = true;
+        const totalChars = text.length;
+        const msPerChar = 30; // default fallback
+        let index = 0;
+        intervalRef.current = setInterval(() => {
+          index++;
+          setDisplayedText(text.slice(0, index));
+          if (index >= totalChars) {
+            clearInterval(intervalRef.current);
+            intervalRef.current = null;
+            setIsComplete(true);
+            if (onComplete) onComplete();
+          }
+        }, msPerChar);
+      }
+    }, 3000);
+    return () => clearTimeout(fallbackTimer);
+  }, [text]);
+
+  return (
+    <Text style={style} accessible={true}>
+      {displayedText}
+      {!isComplete && <Text style={{ color: '#4ecca3' }}>|</Text>}
+    </Text>
+  );
+};
+
 export default function App() {
   const [gameEngine, setGameEngine] = useState(null);
   const [isInitialized, setIsInitialized] = useState(false);
@@ -26,12 +108,15 @@ export default function App() {
   const [playerStats, setPlayerStats] = useState(null);
   const [currentLocation, setCurrentLocation] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [speechDuration, setSpeechDuration] = useState(0);
+  const speechDurationRef = useRef(0);
 
   const aiServiceRef = useRef(null);
   const speechServiceRef = useRef(null);
   const voiceListenerRef = useRef(null);
   const audioServiceRef = useRef(null);
   const gameEngineRef = useRef(null);
+  const scrollViewRef = useRef(null);
 
   useEffect(() => {
     initializeGame();
@@ -59,6 +144,18 @@ export default function App() {
       // Using OpenAI TTS with "Fable" voice - British accent, expressive storyteller
       // Cost: $0.45 per playthrough vs $6.00 with ElevenLabs (92% savings!)
       speechServiceRef.current = new OpenAITTSService(openAiKey, 'fable');
+
+      // Listen for speech start to sync typewriter with audio
+      speechServiceRef.current.on('speechStart', ({ duration }) => {
+        console.log(`[App] Speech started, duration: ${duration}s`);
+        speechDurationRef.current = duration;
+        setSpeechDuration(duration);
+      });
+
+      // Reset duration when speech ends so next message gets fresh timing
+      speechServiceRef.current.on('speechEnd', () => {
+        speechDurationRef.current = 0;
+      });
       
       // Fallback to device TTS if needed:
       // speechServiceRef.current = new SpeechService();
@@ -123,18 +220,38 @@ export default function App() {
   };
 
   const setupGameListeners = (engine) => {
-    engine.on('gameStarted', ({ message }) => {
+    // Narration event fires just BEFORE TTS starts — this is the sync point
+    // so the typewriter animation runs in parallel with audio playback
+    engine.on('narration', ({ message }) => {
+      // Reset duration so TypewriterText waits for fresh timing from speechStart
+      setSpeechDuration(0);
+      speechDurationRef.current = 0;
       addToLog('Dungeon Master', message);
     });
 
-    engine.on('gameLoaded', ({ message }) => {
-      addToLog('Dungeon Master', message);
+    engine.on('gameStarted', () => {
+      // Text already added via narration events from speak() calls
+      // Just update state
+      updateGameState(engine);
+    });
+
+    engine.on('gameLoaded', () => {
+      // Text already added via speak() -> narration events
       updateGameState(engine);
     });
 
     engine.on('awaitingVoiceInput', async () => {
-      // Auto-enable microphone after DM finishes speaking
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // Guard: wait until TTS is confirmed done before enabling mic
+      // This prevents the mic from capturing the DM's own voice
+      if (speechServiceRef.current && speechServiceRef.current.getIsSpeaking()) {
+        console.log('[App] TTS still speaking, waiting...');
+        // Poll until speech ends
+        while (speechServiceRef.current.getIsSpeaking()) {
+          await new Promise(resolve => setTimeout(resolve, 200));
+        }
+      }
+      // Extra buffer to avoid capturing echo/reverb from speaker
+      await new Promise(resolve => setTimeout(resolve, 1000));
       await handleMicrophonePress();
     });
   };
@@ -157,11 +274,10 @@ export default function App() {
       console.log('[App] Processing command:', text);
       const result = await gameEngineRef.current.processCommand(text);
       
+      // DM text is already added to log via 'narration' events from speak()
+      // Just update game state here
       if (result.success) {
-        addToLog('Dungeon Master', result.message);
         updateGameState(gameEngineRef.current);
-      } else {
-        addToLog('Dungeon Master', result.message || 'I did not understand that command.');
       }
     } catch (error) {
       console.error('Error processing command:', error);
@@ -179,6 +295,12 @@ export default function App() {
 
   const addToLog = (speaker, message) => {
     setGameLog(prev => [...prev, { speaker, message, timestamp: Date.now() }]);
+    // Auto-scroll to bottom after new message
+    setTimeout(() => {
+      if (scrollViewRef.current) {
+        scrollViewRef.current.scrollToEnd({ animated: true });
+      }
+    }, 100);
   };
 
   const handleMicrophonePress = async () => {
@@ -227,12 +349,15 @@ export default function App() {
     await processVoiceCommand(command);
   };
 
+  const isDM = (speaker) => speaker === 'Dungeon Master';
+  const isPlayer = (speaker) => speaker === 'You';
+  const isLastEntry = (index) => index === gameLog.length - 1;
+
   return (
     <SafeAreaView style={styles.container}>
+      {/* Header with pixel logo */}
       <View style={styles.header}>
-        <Text style={styles.title} accessible={true} accessibilityRole="header">
-          AIDM QUESTS
-        </Text>
+        <Image source={LOGO} style={styles.logoImage} resizeMode="contain" />
         {playerStats && (
           <View style={styles.statsBar} accessible={true} accessibilityLabel={`Health ${playerStats.health} out of ${playerStats.maxHealth}, Level ${playerStats.level}`}>
             <Text style={styles.statText}>❤️ {playerStats.health}/{playerStats.maxHealth}</Text>
@@ -242,33 +367,79 @@ export default function App() {
         )}
       </View>
 
+      {/* Chat log with pixel-style bubbles */}
       <ScrollView 
+        ref={scrollViewRef}
         style={styles.logContainer}
+        contentContainerStyle={styles.logContent}
         accessible={true}
         accessibilityLabel="Game log"
+        onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
       >
         {gameLog.map((entry, index) => (
-          <View key={index} style={styles.logEntry}>
-            <Text 
+          <View
+            key={index}
+            style={[
+              styles.chatRow,
+              isPlayer(entry.speaker) && styles.chatRowPlayer
+            ]}
+          >
+            {/* DM Avatar - left side */}
+            {isDM(entry.speaker) && (
+              <Image source={DM_AVATAR} style={styles.avatarDM} />
+            )}
+
+            {/* Message bubble */}
+            <View
               style={[
-                styles.logSpeaker,
-                entry.speaker === 'You' && styles.logPlayerSpeaker
+                styles.bubbleOuter,
+                isDM(entry.speaker) && styles.bubbleOuterDM,
+                isPlayer(entry.speaker) && styles.bubbleOuterPlayer
               ]}
-              accessible={true}
             >
-              {entry.speaker}:
-            </Text>
-            <Text 
-              style={styles.logMessage}
-              accessible={true}
-              accessibilityLabel={`${entry.speaker} says: ${entry.message}`}
-            >
-              {entry.message}
-            </Text>
+              <View
+                style={[
+                  styles.bubbleInner,
+                  isDM(entry.speaker) && styles.bubbleInnerDM,
+                  isPlayer(entry.speaker) && styles.bubbleInnerPlayer
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.logSpeaker,
+                    isPlayer(entry.speaker) && styles.logPlayerSpeaker
+                  ]}
+                >
+                  {entry.speaker}:
+                </Text>
+                {isDM(entry.speaker) && isLastEntry(index) ? (
+                  <TypewriterText
+                    text={entry.message}
+                    style={styles.logMessage}
+                    audioDuration={speechDuration}
+                    onComplete={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
+                  />
+                ) : (
+                  <Text
+                    style={styles.logMessage}
+                    accessible={true}
+                    accessibilityLabel={`${entry.speaker} says: ${entry.message}`}
+                  >
+                    {entry.message}
+                  </Text>
+                )}
+              </View>
+            </View>
+
+            {/* Player Avatar - right side */}
+            {isPlayer(entry.speaker) && (
+              <Image source={PLAYER_AVATAR} style={styles.avatarPlayer} />
+            )}
           </View>
         ))}
       </ScrollView>
 
+      {/* Controls */}
       <View style={styles.controlsContainer}>
         {!isInitialized ? (
           <Text style={styles.loadingText}>Initializing game...</Text>
@@ -354,70 +525,124 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#1a1a2e',
   },
+  // ─── Header ───
   header: {
-    padding: 16,
+    paddingTop: 8,
+    paddingBottom: 8,
+    paddingHorizontal: 16,
     backgroundColor: '#16213e',
-    borderBottomWidth: 2,
+    borderBottomWidth: 3,
     borderBottomColor: '#e94560',
+    alignItems: 'center',
   },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#e94560',
-    textAlign: 'center',
-    marginBottom: 8,
+  logoImage: {
+    width: 180,
+    height: 60,
   },
   statsBar: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    marginTop: 8,
+    width: '100%',
+    marginTop: 4,
   },
   statText: {
     color: '#f1f1f1',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
   },
+  // ─── Chat Log ───
   logContainer: {
     flex: 1,
-    padding: 16,
   },
-  logEntry: {
-    marginBottom: 16,
-    padding: 12,
+  logContent: {
+    padding: 10,
+    paddingBottom: 20,
+  },
+  // ─── Chat Row ───
+  chatRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 14,
+    paddingRight: 50, // space so DM bubbles don't stretch full width
+  },
+  chatRowPlayer: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    paddingRight: 0,
+    paddingLeft: 50, // space so player bubbles don't stretch full width
+  },
+  // ─── Avatars ───
+  avatarDM: {
+    width: 44,
+    height: 44,
+    marginRight: 6,
+    marginTop: 2,
+  },
+  avatarPlayer: {
+    width: 52,
+    height: 52,
+    marginLeft: 6,
+    marginTop: 2,
+  },
+  // ─── Pixel-style Bubble (outer border) ───
+  bubbleOuter: {
+    flex: 1,
+    borderWidth: 3,
+    borderColor: '#ffffff',
+    padding: 3,
+  },
+  bubbleOuterDM: {
+    borderColor: '#4466aa',
+  },
+  bubbleOuterPlayer: {
+    borderColor: '#e94560',
+  },
+  // ─── Bubble inner ───
+  bubbleInner: {
     backgroundColor: '#0f3460',
-    borderRadius: 8,
-    borderLeftWidth: 4,
-    borderLeftColor: '#e94560',
+    padding: 10,
   },
+  bubbleInnerDM: {
+    backgroundColor: '#0f3460',
+  },
+  bubbleInnerPlayer: {
+    backgroundColor: '#1a2744',
+  },
+  // ─── Text ───
   logSpeaker: {
     color: '#e94560',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: 'bold',
-    marginBottom: 4,
+    marginBottom: 3,
   },
   logPlayerSpeaker: {
     color: '#4ecca3',
   },
   logMessage: {
     color: '#f1f1f1',
-    fontSize: 16,
-    lineHeight: 24,
+    fontSize: 15,
+    lineHeight: 22,
   },
+  // ─── Controls ───
   controlsContainer: {
-    padding: 16,
+    padding: 12,
+    paddingBottom: 16,
     backgroundColor: '#16213e',
-    borderTopWidth: 2,
+    borderTopWidth: 3,
     borderTopColor: '#e94560',
   },
   micButton: {
     backgroundColor: '#e94560',
-    padding: 20,
-    borderRadius: 12,
+    padding: 18,
+    borderRadius: 0, // pixel-style square edges
+    borderWidth: 3,
+    borderColor: '#ff6b81',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 10,
   },
   micButtonActive: {
     backgroundColor: '#4ecca3',
+    borderColor: '#7effc8',
   },
   micButtonText: {
     color: '#fff',
@@ -427,19 +652,21 @@ const styles = StyleSheet.create({
   quickCommandsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 12,
+    marginBottom: 10,
   },
   quickCommandButton: {
     flex: 1,
     backgroundColor: '#0f3460',
-    padding: 12,
-    borderRadius: 8,
-    marginHorizontal: 4,
+    padding: 11,
+    borderRadius: 0, // pixel-style
+    borderWidth: 2,
+    borderColor: '#4466aa',
+    marginHorizontal: 3,
     alignItems: 'center',
   },
   quickCommandText: {
     color: '#f1f1f1',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
   },
   startButtonsContainer: {
@@ -449,14 +676,16 @@ const styles = StyleSheet.create({
   startButton: {
     flex: 1,
     backgroundColor: '#e94560',
-    padding: 16,
-    borderRadius: 8,
-    marginHorizontal: 4,
+    padding: 14,
+    borderRadius: 0, // pixel-style
+    borderWidth: 3,
+    borderColor: '#ff6b81',
+    marginHorizontal: 3,
     alignItems: 'center',
   },
   startButtonText: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: 'bold',
   },
   loadingText: {

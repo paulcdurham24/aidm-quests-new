@@ -10,6 +10,20 @@ export class OpenAITTSService {
     this.isSpeaking = false;
     this.currentSound = null;
     this.audioQueue = [];
+    this.eventListeners = {};
+  }
+
+  on(event, callback) {
+    if (!this.eventListeners[event]) {
+      this.eventListeners[event] = [];
+    }
+    this.eventListeners[event].push(callback);
+  }
+
+  emit(event, data) {
+    if (this.eventListeners[event]) {
+      this.eventListeners[event].forEach(cb => cb(data));
+    }
   }
 
   async speak(text, options = {}) {
@@ -97,14 +111,21 @@ export class OpenAITTSService {
             return;
           }
 
+          // Get audio duration and emit speechStart so UI can sync typewriter
+          const durationSec = sound.getDuration();
+          console.log(`[TTS] Audio duration: ${durationSec}s`);
+          this.emit('speechStart', { duration: durationSec });
+
           sound.play((success) => {
             if (success) {
               this.isSpeaking = false;
+              this.emit('speechEnd', {});
               sound.release();
               resolve();
             } else {
               console.error('Playback failed');
               this.isSpeaking = false;
+              this.emit('speechEnd', {});
               sound.release();
               reject(new Error('Playback failed'));
             }
