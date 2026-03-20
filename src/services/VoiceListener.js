@@ -5,6 +5,9 @@ export class VoiceListener {
     this.isListening = false;
     this.recognizedText = '';
     this.eventListeners = {};
+    this.waitingForInput = false; // When true, auto-retry on timeout errors
+    this.retryCount = 0;
+    this.maxRetries = 10; // Max retries before giving up
     this.setupVoiceRecognition();
   }
 
@@ -23,12 +26,10 @@ export class VoiceListener {
       }
 
       this.recognizedText = '';
-      // Start voice recognition with longer timeout (15 seconds)
-      await Voice.start('en-US', {
-        SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS: 15000,
-        SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS: 15000,
-        SPEECH_INPUT_MINIMUM_LENGTH_MILLIS: 15000
-      });
+      this.waitingForInput = true;
+      this.retryCount = 0;
+      // Start voice recognition - let Android handle timing naturally
+      await Voice.start('en-US');
       this.isListening = true;
       
       this.emit('listeningStarted');
@@ -42,6 +43,7 @@ export class VoiceListener {
 
   async stopListening() {
     try {
+      this.waitingForInput = false; // Stop auto-retry
       await Voice.stop();
       this.isListening = false;
       
@@ -55,6 +57,7 @@ export class VoiceListener {
 
   async cancelListening() {
     try {
+      this.waitingForInput = false; // Stop auto-retry
       await Voice.cancel();
       this.isListening = false;
       this.recognizedText = '';
@@ -96,6 +99,10 @@ export class VoiceListener {
       this.recognizedText = event.value[0];
       console.log('Recognized:', this.recognizedText);
       
+      // Got a result, stop waiting/retrying
+      this.waitingForInput = false;
+      this.retryCount = 0;
+      
       this.emit('results', { 
         text: this.recognizedText,
         allResults: event.value 
@@ -115,9 +122,40 @@ export class VoiceListener {
   }
 
   onSpeechError(event) {
-    console.error('Speech recognition error:', event.error);
+    const errorCode = event.error?.code || event.error;
+    console.log('Speech recognition error code:', errorCode);
     this.isListening = false;
     
+    // Error codes 7 (No match) and 11 (Didn't understand) are timeout errors
+    // If we're waiting for input, auto-retry instead of giving up
+    const isTimeoutError = errorCode === '7' || errorCode === '11' || 
+                           errorCode === 7 || errorCode === 11;
+    
+    if (isTimeoutError && this.waitingForInput && this.retryCount < this.maxRetries) {
+      this.retryCount++;
+      console.log(`[VoiceListener] Timeout - auto-restarting mic (attempt ${this.retryCount}/${this.maxRetries})`);
+      
+      // Small delay before restarting to avoid rapid cycling
+      setTimeout(async () => {
+        if (this.waitingForInput) {
+          try {
+            this.recognizedText = '';
+            await Voice.start('en-US');
+            this.isListening = true;
+            // Don't emit listeningStarted again - user still sees mic as active
+          } catch (err) {
+            console.error('Error restarting voice recognition:', err);
+            this.waitingForInput = false;
+            this.emit('error', { error: event.error, event });
+          }
+        }
+      }, 300);
+      return; // Don't emit error - we're retrying silently
+    }
+    
+    // Real error or max retries reached
+    this.waitingForInput = false;
+    this.retryCount = 0;
     this.emit('error', { 
       error: event.error,
       event 

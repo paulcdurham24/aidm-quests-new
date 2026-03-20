@@ -13,6 +13,12 @@ export const enemies = [
       hit: 'You hear a pained shriek as your weapon strikes the goblin',
       death: 'The goblin collapses with a final whimper'
     },
+    sfx: {
+      appear: 'goblin_cackle',
+      attack: 'small_monster_attack_195712',
+      hit: 'goblin_scream',
+      death: 'goblin_death'
+    },
     loot: [
       { itemId: 'gold_coins', quantity: 5, chance: 0.8 },
       { itemId: 'rusty_dagger', quantity: 1, chance: 0.3 }
@@ -32,6 +38,12 @@ export const enemies = [
       hit: 'The wolf yelps in pain as your attack connects',
       death: 'The wolf lets out one final howl before falling silent'
     },
+    sfx: {
+      appear: 'wolf_growl',
+      attack: 'monster_bite',
+      hit: 'monster_howl',
+      death: 'wolf_howl_death'
+    },
     loot: [
       { itemId: 'wolf_pelt', quantity: 1, chance: 0.9 },
       { itemId: 'gold_coins', quantity: 10, chance: 0.7 }
@@ -50,6 +62,12 @@ export const enemies = [
       attack: 'The skeleton swings its rusty sword with surprising speed',
       hit: 'Bones crack and splinter as you strike the undead warrior',
       death: 'The skeleton collapses into a pile of lifeless bones'
+    },
+    sfx: {
+      appear: 'spooky_chimes',
+      attack: 'sword_swing',
+      hit: 'breaking_bones',
+      death: 'skeleton_death_breath'
     },
     loot: [
       { itemId: 'bone_dust', quantity: 3, chance: 0.9 },
@@ -71,6 +89,12 @@ export const enemies = [
       hit: 'Your weapon barely pierces the troll\'s thick hide, but it roars in anger',
       death: 'The mighty troll crashes to the ground like a falling boulder'
     },
+    sfx: {
+      appear: 'troll_roars',
+      attack: 'monster_warrior_roar',
+      hit: 'classic_punch_impact',
+      death: 'cave_troll_death'
+    },
     loot: [
       { itemId: 'troll_hide', quantity: 1, chance: 0.8 },
       { itemId: 'gold_coins', quantity: 50, chance: 1.0 },
@@ -90,6 +114,12 @@ export const enemies = [
       attack: 'The wraith reaches out with spectral claws, draining your very essence',
       hit: 'Your weapon passes through the wraith, but it shrieks in ethereal pain',
       death: 'The wraith dissolves into mist with a final, haunting wail'
+    },
+    sfx: {
+      appear: 'ghost_eerie_ambiance',
+      attack: 'banshee_screaming_sound_effect_312864',
+      hit: 'flying_monster_screech',
+      death: 'death_wraith'
     },
     loot: [
       { itemId: 'ectoplasm', quantity: 2, chance: 0.9 },
@@ -111,11 +141,43 @@ export const enemies = [
       hit: 'Your attack strikes true, causing the dragon to roar in fury',
       death: 'The dragon crashes down with a final earth-shaking impact'
     },
+    sfx: {
+      appear: 'dragon_roar_4_364609',
+      attack: 'dragon_fire_attack',
+      hit: 'dragon_growl_7_364612',
+      death: 'dragon_death'
+    },
     loot: [
       { itemId: 'dragon_scale', quantity: 3, chance: 1.0 },
       { itemId: 'dragon_tooth', quantity: 1, chance: 0.8 },
       { itemId: 'gold_coins', quantity: 200, chance: 1.0 },
       { itemId: 'legendary_sword', quantity: 1, chance: 0.2 }
+    ]
+  },
+  {
+    id: 'zombie',
+    name: 'Rotting Zombie',
+    description: 'A shambling corpse with decaying flesh, driven by an insatiable hunger for the living',
+    health: 60,
+    attack: 9,
+    defense: 3,
+    level: 3,
+    sounds: {
+      appear: 'A putrid stench fills the air as you hear the wet, shuffling footsteps of something undead',
+      attack: 'The zombie lurches forward, swiping at you with rotting claws',
+      hit: 'Your weapon tears through decaying flesh with a sickening sound',
+      death: 'The zombie collapses into a heap of lifeless rot'
+    },
+    sfx: {
+      appear: 'zombie_moan_sfx_454252',
+      attack: 'zombie_sfx_450450',
+      hit: 'zombie_pain',
+      death: 'zombie_death_2'
+    },
+    loot: [
+      { itemId: 'rotten_flesh', quantity: 2, chance: 0.9 },
+      { itemId: 'gold_coins', quantity: 15, chance: 0.5 },
+      { itemId: 'healing_potion', quantity: 1, chance: 0.3 }
     ]
   }
 ];

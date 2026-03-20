@@ -16,6 +16,7 @@ import { SpeechService } from './src/services/SpeechService';
 import { OpenAITTSService } from './src/services/OpenAITTSService';
 import { VoiceListener } from './src/services/VoiceListener';
 import { AudioService } from './src/services/AudioService';
+import { OPENAI_API_KEY, ELEVENLABS_API_KEY } from '@env';
 
 export default function App() {
   const [gameEngine, setGameEngine] = useState(null);
@@ -51,9 +52,7 @@ export default function App() {
 
   const initializeGame = async () => {
     try {
-      // TODO: Move API key to environment variable
-      // For now, you need to add your OpenAI API key here
-      const openAiKey = process.env.OPENAI_API_KEY;
+      const openAiKey = OPENAI_API_KEY;
       
       aiServiceRef.current = new AIService(openAiKey);
       
@@ -68,6 +67,7 @@ export default function App() {
       audioServiceRef.current = new AudioService();
 
       await audioServiceRef.current.initialize();
+      audioServiceRef.current.setElevenLabsKey(ELEVENLABS_API_KEY);
 
       const engine = new GameEngine(
         aiServiceRef.current,
@@ -139,24 +139,27 @@ export default function App() {
     });
   };
 
-  const processVoiceCommand = async (command) => {
-    const engine = gameEngineRef.current;
-    console.log('[App] processVoiceCommand called, engine:', !!engine, 'isProcessing:', isProcessing);
+  const processVoiceCommand = async (text) => {
+    console.log('[App] processVoiceCommand called, engine:', !!gameEngineRef.current, 'isProcessing:', isProcessing);
     
-    if (!engine || isProcessing) {
-      console.log('[App] Skipping command - engine or isProcessing check failed');
+    // Restore ambient volume after voice input
+    if (audioServiceRef.current) {
+      await audioServiceRef.current.setAmbientVolume(0.2); // Back to normal quiet level
+    }
+    
+    if (!gameEngineRef.current || isProcessing) {
       return;
     }
 
     setIsProcessing(true);
-    console.log('[App] Processing command:', command);
 
     try {
-      const result = await engine.processCommand(command);
+      console.log('[App] Processing command:', text);
+      const result = await gameEngineRef.current.processCommand(text);
       
       if (result.success) {
         addToLog('Dungeon Master', result.message);
-        updateGameState(engine);
+        updateGameState(gameEngineRef.current);
       } else {
         addToLog('Dungeon Master', result.message || 'I did not understand that command.');
       }
@@ -192,6 +195,11 @@ export default function App() {
           'Voice recognition is not available on this device.'
         );
         return;
+      }
+
+      // Lower ambient volume when listening to prevent interference
+      if (audioServiceRef.current) {
+        await audioServiceRef.current.setAmbientVolume(0.05);
       }
 
       await voiceListenerRef.current.startListening();
