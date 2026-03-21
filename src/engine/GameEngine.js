@@ -103,8 +103,8 @@ export class GameEngine {
     // Text already added to UI via speak() -> narration event
     this.emit('gameLoaded', {});
 
-    // Prompt player for action after loading saved game
-    await this.promptAndListen('What would you like to do, Adventurer?', 'Ready for player action');
+    // Auto-enable mic after loading saved game
+    await this.autoEnableMic('Ready for player action');
 
     return { success: true, message };
   }
@@ -274,8 +274,8 @@ export class GameEngine {
         await this.updateAmbientAudio();
         this.emit('combatEnded', { victory: false, fled: true });
         
-        // Prompt player after escaping combat
-        await this.promptAndListen('You escaped! What would you like to do next, Adventurer?', 'Post-flee action');
+        // Auto-enable mic after escaping combat
+        await this.autoEnableMic('Post-flee action');
       } else if (result.success === false) {
         this.gameState.player.health = result.playerHealth;
 
@@ -350,7 +350,7 @@ export class GameEngine {
 
     if (command.includes('save')) {
       const saveResult = await this.saveGame();
-      await this.promptAndListen('What would you like to do next, Adventurer?', 'Post-save action');
+      await this.autoEnableMic('Post-save action');
       return saveResult;
     }
 
@@ -362,8 +362,8 @@ export class GameEngine {
     const cleanResponse = await this.processSoundCues(aiResponse);
     await this.speak(cleanResponse);
     
-    // Prompt player after AI response
-    await this.promptAndListen('What would you like to do next, Adventurer?', 'Post-AI response');
+    // Auto-enable mic after AI response
+    await this.autoEnableMic('Post-AI response');
     return { success: true, message: cleanResponse, action: 'ai_response' };
   }
 
@@ -379,8 +379,8 @@ export class GameEngine {
       await this.speak(message);
       await this.updateAmbientAudio();
       
-      // Prompt player after arriving at new location
-      await this.promptAndListen('What would you like to do next, Adventurer?', 'Ready for next action');
+      // Auto-enable mic after arriving at new location
+      await this.autoEnableMic('Ready for next action');
       
       return { success: true, message, action: 'moved' };
     }
@@ -459,8 +459,8 @@ export class GameEngine {
       
       this.addEvent('Found treasure');
       
-      // Prompt player after finding treasure
-      await this.promptAndListen('What would you like to do next, Adventurer?', 'Post-treasure action');
+      // Auto-enable mic after finding treasure
+      await this.autoEnableMic('Post-treasure action');
       
       return { success: true, message: encounter.message, action: 'treasure_found', encounter };
     }
@@ -473,8 +473,8 @@ export class GameEngine {
       
       this.addEvent(`Event: ${encounter.event}`);
       
-      // Prompt player after event
-      await this.promptAndListen('What would you like to do next, Adventurer?', 'Post-event action');
+      // Auto-enable mic after event
+      await this.autoEnableMic('Post-event action');
       
       return { success: true, message: encounter.message + ' ' + aiResponse, action: 'event', encounter };
     }
@@ -505,8 +505,8 @@ export class GameEngine {
       this.addEvent(`Defeated ${result.enemy.name}`);
       this.emit('combatEnded', { victory: true });
       
-      // Prompt player after combat victory
-      await this.promptAndListen('The battle is won! What would you like to do next, Adventurer?', 'Post-combat action');
+      // Auto-enable mic after combat victory
+      await this.autoEnableMic('Post-combat action');
     } else {
       await this.audioService.playSfx('character_death');
       const message = "You have been defeated. Your vision fades to black... You awaken back at the Dungeon Master's hut.";
@@ -529,7 +529,7 @@ export class GameEngine {
     
     if (!result.success) {
       await this.speak(result.message);
-      await this.promptAndListen('What would you like to do next?', 'Post-item-fail action');
+      await this.autoEnableMic('Post-item-fail action');
       return result;
     }
 
@@ -541,12 +541,12 @@ export class GameEngine {
       
       const message = `${result.message} You restored ${result.effect.value} health. Current health: ${this.gameState.player.health}`;
       await this.speak(message);
-      await this.promptAndListen('What would you like to do next, Adventurer?', 'Post-item action');
+      await this.autoEnableMic('Post-item action');
       return { success: true, message };
     }
 
     await this.speak(result.message);
-    await this.promptAndListen('What would you like to do next?', 'Post-item action');
+    await this.autoEnableMic('Post-item action');
     return result;
   }
 
@@ -593,14 +593,14 @@ export class GameEngine {
   async equipItem(itemId) {
     const result = this.inventoryEngine.equipItem(itemId);
     await this.speak(result.message);
-    await this.promptAndListen('What would you like to do next?', 'Post-equip action');
+    await this.autoEnableMic('Post-equip action');
     return result;
   }
 
   async checkInventory() {
     const description = this.inventoryEngine.getInventoryDescription();
     await this.speak(description);
-    await this.promptAndListen('What would you like to do next, Adventurer?', 'Post-inventory action');
+    await this.autoEnableMic('Post-inventory action');
     return { success: true, message: description };
   }
 
@@ -609,14 +609,14 @@ export class GameEngine {
     const message = `You are a level ${stats.level} adventurer. Health: ${stats.health} out of ${stats.maxHealth}. Attack: ${stats.attack}. Defense: ${stats.defense}. Experience: ${this.gameState.player.experience} out of ${this.gameState.player.experienceToNext}.`;
     
     await this.speak(message);
-    await this.promptAndListen('What would you like to do next?', 'Post-status action');
+    await this.autoEnableMic('Post-status action');
     return { success: true, message };
   }
 
   async checkQuests() {
     const description = this.questEngine.getQuestDescription();
     await this.speak(description);
-    await this.promptAndListen('What would you like to do next, Adventurer?', 'Post-quest check');
+    await this.autoEnableMic('Post-quest check');
     return { success: true, message: description };
   }
 
@@ -626,7 +626,7 @@ export class GameEngine {
     const description = await this.aiService.describeLocation(location, aiContext);
     
     await this.speak(description);
-    await this.promptAndListen('What would you like to do next, Adventurer?', 'Post-look action');
+    await this.autoEnableMic('Post-look action');
     return { success: true, message: description };
   }
 
@@ -636,7 +636,7 @@ export class GameEngine {
     if (location.type !== 'safe_zone') {
       const message = "This location is too dangerous to rest. Find a safe place first.";
       await this.speak(message);
-      await this.promptAndListen('What would you like to do instead, Adventurer?', 'Post-rest-fail action');
+      await this.autoEnableMic('Post-rest-fail action');
       return { success: false, message };
     }
 
@@ -647,7 +647,7 @@ export class GameEngine {
     await this.speak(message);
     await this.audioService.playSound('rest_complete');
     
-    await this.promptAndListen('What would you like to do next, Adventurer?', 'Post-rest action');
+    await this.autoEnableMic('Post-rest action');
     return { success: true, message };
   }
 
@@ -664,7 +664,7 @@ export class GameEngine {
   async showHelp() {
     const message = "You can use the following commands: explore, attack, defend, flee, use item, equip item, inventory, status, quests, look, rest, save, and help. Simply speak naturally, and I will understand your intent.";
     await this.speak(message);
-    await this.promptAndListen('What would you like to do, Adventurer?', 'Post-help action');
+    await this.autoEnableMic('Post-help action');
     return { success: true, message };
   }
 
@@ -765,19 +765,13 @@ export class GameEngine {
     
     await new Promise(resolve => setTimeout(resolve, 1500));
     
-    // Give player direction and options
-    const prompt = "What would you like to do, Adventurer? You can EXPLORE further, LOOK AROUND for details, check your STATUS, or simply tell me what action you wish to take.";
-    await this.speak(prompt);
-    
     this.addEvent('Adventure began');
     
     // Save game immediately after starting so continue works
     await this.saveGame();
     
-    // speak() already emits narration and awaits audio completion
-    // Short buffer for echo before enabling mic
-    await new Promise(resolve => setTimeout(resolve, 800));
-    this.emit('awaitingVoiceInput', { prompt: 'Ready for player action' });
+    // Auto-enable mic without extra prompt - player can respond naturally
+    await this.autoEnableMic('Ready for player action');
     
     return { success: true, message: firstLocationNarrative };
   }
@@ -895,6 +889,13 @@ export class GameEngine {
     await this.speak(prompt);
     // speak() already awaits audio completion + 300ms buffer
     // Add extra buffer to prevent mic from capturing residual audio
+    await new Promise(resolve => setTimeout(resolve, 800));
+    this.emit('awaitingVoiceInput', { prompt: context });
+  }
+
+  async autoEnableMic(context = 'Ready for input') {
+    // Enable mic after narration without additional prompts
+    // speak() already includes buffers, so just small delay
     await new Promise(resolve => setTimeout(resolve, 800));
     this.emit('awaitingVoiceInput', { prompt: context });
   }
