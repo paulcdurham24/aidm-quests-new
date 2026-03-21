@@ -189,6 +189,11 @@ export default function App() {
 
       gameEngineRef.current = engine;
       setGameEngine(engine);
+      
+      // Enable auto-save every 5 minutes
+      engine.memoryEngine.startAutoSave(engine, 5);
+      console.log('[App] Auto-save enabled (every 5 minutes)');
+      
       setIsInitialized(true);
 
       // Auto-start DM welcome - no button press needed

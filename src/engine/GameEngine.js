@@ -770,6 +770,10 @@ export class GameEngine {
     await this.speak(prompt);
     
     this.addEvent('Adventure began');
+    
+    // Save game immediately after starting so continue works
+    await this.saveGame();
+    
     // speak() already emits narration and awaits audio completion
     // Short buffer for echo before enabling mic
     await new Promise(resolve => setTimeout(resolve, 800));
