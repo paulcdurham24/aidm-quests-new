@@ -25,6 +25,17 @@ const LOGO = require('./src/assets/logo.png');
 const DM_AVATAR = require('./src/assets/dm_avatar.png');
 const PLAYER_AVATAR = require('./src/assets/player_avatar.png');
 
+// Enemy pixel art
+const ENEMY_IMAGES = {
+  goblin: require('./src/assets/goblin.png'),
+  wolf: require('./src/assets/evil_wolf.png'),
+  skeleton: require('./src/assets/skeleton.png'),
+  troll: require('./src/assets/troll.png'),
+  wraith: require('./src/assets/wraith.png'),
+  dragon: require('./src/assets/dragon.png'),
+  zombie: require('./src/assets/zombie.png')
+};
+
 // Typewriter text component for DM messages - syncs with TTS audio duration
 const TypewriterText = ({ text, style, onComplete, audioDuration }) => {
   const [displayedText, setDisplayedText] = useState('');
@@ -109,6 +120,7 @@ export default function App() {
   const [currentLocation, setCurrentLocation] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [speechDuration, setSpeechDuration] = useState(0);
+  const [currentEnemy, setCurrentEnemy] = useState(null);
   const speechDurationRef = useRef(0);
 
   const aiServiceRef = useRef(null);
@@ -240,6 +252,16 @@ export default function App() {
       updateGameState(engine);
     });
 
+    engine.on('combatStarted', ({ enemy }) => {
+      console.log('[App] Combat started with:', enemy.name);
+      setCurrentEnemy(enemy);
+    });
+
+    engine.on('combatEnded', ({ victory }) => {
+      console.log('[App] Combat ended, victory:', victory);
+      setCurrentEnemy(null);
+    });
+
     engine.on('awaitingVoiceInput', async () => {
       // Guard: wait until TTS is confirmed done before enabling mic
       // This prevents the mic from capturing the DM's own voice
@@ -291,6 +313,11 @@ export default function App() {
     const state = engine.getState();
     setPlayerStats(state.gameState.player);
     setCurrentLocation(state.gameState.world.currentLocation);
+    
+    // Update enemy health during combat if still in combat
+    if (state.inCombat && state.currentEnemy) {
+      setCurrentEnemy(state.currentEnemy);
+    }
   };
 
   const addToLog = (speaker, message) => {
@@ -355,6 +382,23 @@ export default function App() {
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* Enemy portrait overlay during combat */}
+      {currentEnemy && (
+        <View style={styles.enemyOverlay}>
+          <View style={styles.enemyPortraitContainer}>
+            <Image 
+              source={ENEMY_IMAGES[currentEnemy.id]} 
+              style={styles.enemyPortrait} 
+              resizeMode="contain"
+            />
+            <Text style={styles.enemyName}>{currentEnemy.name}</Text>
+            <View style={styles.enemyHealthBar}>
+              <Text style={styles.enemyHealthText}>❤️ {currentEnemy.health}</Text>
+            </View>
+          </View>
+        </View>
+      )}
+
       {/* Header with pixel logo */}
       <View style={styles.header}>
         <Image source={LOGO} style={styles.logoImage} resizeMode="contain" />
@@ -524,6 +568,44 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#1a1a2e',
+  },
+  // ─── Enemy Portrait Overlay ───
+  enemyOverlay: {
+    position: 'absolute',
+    top: 90,
+    right: 10,
+    zIndex: 1000,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    borderWidth: 3,
+    borderColor: '#e94560',
+    padding: 8,
+  },
+  enemyPortraitContainer: {
+    alignItems: 'center',
+  },
+  enemyPortrait: {
+    width: 120,
+    height: 120,
+  },
+  enemyName: {
+    color: '#e94560',
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginTop: 6,
+    textAlign: 'center',
+  },
+  enemyHealthBar: {
+    marginTop: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    backgroundColor: '#0f3460',
+    borderWidth: 2,
+    borderColor: '#4466aa',
+  },
+  enemyHealthText: {
+    color: '#f1f1f1',
+    fontSize: 13,
+    fontWeight: '600',
   },
   // ─── Header ───
   header: {

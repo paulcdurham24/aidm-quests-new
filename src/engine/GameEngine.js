@@ -272,6 +272,7 @@ export class GameEngine {
       if (result.fled) {
         await this.speak(result.message);
         await this.updateAmbientAudio();
+        this.emit('combatEnded', { victory: false, fled: true });
         
         // Prompt player after escaping combat
         await this.promptAndListen('You escaped! What would you like to do next, Adventurer?', 'Post-flee action');
@@ -433,6 +434,7 @@ export class GameEngine {
       await this.audioService.playAmbient('combat_music');
       
       this.addEvent(`Combat started: ${encounter.enemy.name}`);
+      this.emit('combatStarted', { enemy: encounter.enemy });
       
       // Prompt player for combat action and activate mic
       await new Promise(resolve => setTimeout(resolve, 1500));
@@ -501,6 +503,7 @@ export class GameEngine {
       }
 
       this.addEvent(`Defeated ${result.enemy.name}`);
+      this.emit('combatEnded', { victory: true });
       
       // Prompt player after combat victory
       await this.promptAndListen('The battle is won! What would you like to do next, Adventurer?', 'Post-combat action');
@@ -514,6 +517,7 @@ export class GameEngine {
       
       await this.updateAmbientAudio();
       this.addEvent('Defeated in combat');
+      this.emit('combatEnded', { victory: false });
       
       // Prompt player after respawn
       await this.promptAndListen('You awaken by the fire, battered but alive. What would you like to do, Adventurer?', 'Post-defeat action');
@@ -806,6 +810,29 @@ export class GameEngine {
   }
 
   async processSoundCues(text) {
+    // Process volume control commands first
+    const volumeCues = this.aiService.extractVolumeCues(text);
+    for (const cue of volumeCues) {
+      console.log(`[GameEngine] AI setting ${cue.type} volume to ${cue.value}`);
+      switch (cue.type) {
+        case 'ambient':
+          await this.setAmbientVolume(cue.value);
+          break;
+        case 'music':
+          await this.setMusicVolume(cue.value);
+          break;
+        case 'effects':
+          await this.setEffectsVolume(cue.value);
+          break;
+        case 'master':
+          await this.setMasterVolume(cue.value);
+          break;
+        default:
+          console.warn(`[GameEngine] Unknown volume type: ${cue.type}`);
+      }
+    }
+
+    // Process sound effect cues
     const soundCues = this.aiService.extractSoundCues(text);
     for (const cue of soundCues) {
       // Try to play from local sound map first, then keyword fallback, then ElevenLabs
@@ -816,7 +843,47 @@ export class GameEngine {
         this.audioService.playFallbackSound(cue);
       }
     }
-    return this.aiService.stripSoundCues(text);
+
+    // Strip both sound and volume cues from text
+    let cleanText = this.aiService.stripSoundCues(text);
+    cleanText = this.aiService.stripVolumeCues(cleanText);
+    return cleanText;
+  }
+
+  // Audio volume controls for AI to use dynamically
+  async setAmbientVolume(volume) {
+    if (this.audioService) {
+      await this.audioService.setAmbientVolume(volume);
+      this.addEvent(`Ambient volume set to ${Math.round(volume * 100)}%`);
+    }
+  }
+
+  async setMusicVolume(volume) {
+    if (this.audioService) {
+      await this.audioService.setMusicVolume(volume);
+      this.addEvent(`Music volume set to ${Math.round(volume * 100)}%`);
+    }
+  }
+
+  async setEffectsVolume(volume) {
+    if (this.audioService) {
+      await this.audioService.setEffectsVolume(volume);
+      this.addEvent(`Effects volume set to ${Math.round(volume * 100)}%`);
+    }
+  }
+
+  async setMasterVolume(volume) {
+    if (this.audioService) {
+      await this.audioService.setMasterVolume(volume);
+      this.addEvent(`Master volume set to ${Math.round(volume * 100)}%`);
+    }
+  }
+
+  getCurrentVolumes() {
+    if (this.audioService) {
+      return this.audioService.getVolume();
+    }
+    return null;
   }
 
   async promptAndListen(prompt, context = 'Ready for input') {

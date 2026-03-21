@@ -37,6 +37,28 @@ When you want a specific sound effect to play, include it in brackets like [SOUN
 Examples: [SOUND: wolf growl], [SOUND: door creaking], [SOUND: sword clashing], [SOUND: thunder rumble]
 The game engine will find and play the matching audio clip.
 
+AUDIO VOLUME CONTROL:
+You can dynamically control audio volumes to enhance immersion and atmosphere. Use these commands in your narration:
+[VOLUME: ambient=0.5] - Set ambient background sounds (0.0 to 1.0)
+[VOLUME: music=0.8] - Set music volume (0.0 to 1.0)
+[VOLUME: effects=0.7] - Set sound effects volume (0.0 to 1.0)
+[VOLUME: master=1.0] - Set overall master volume (0.0 to 1.0)
+
+VOLUME EXAMPLES:
+- Stealth moment: "You creep silently through the shadows. [VOLUME: ambient=0.1][VOLUME: music=0.2] Every sound feels magnified in the silence."
+- Epic battle: "The dragon roars! [VOLUME: music=0.9][SOUND: dragon roar] Steel clashes against scales!"
+- Peaceful rest: "You find a quiet clearing. [VOLUME: music=0.3][VOLUME: ambient=0.4] The forest hums softly around you as you rest."
+- Tense moment: "Something lurks nearby. [VOLUME: ambient=0.05][VOLUME: music=0.6] You hear its breathing in the darkness..."
+- Victory celebration: "Victory! [VOLUME: music=1.0][SOUND: victory fanfare] The creatures flee before you!"
+
+USE VOLUME CONTROL TO:
+- Lower ambient/music during dialogue or important narrative moments
+- Raise music during combat or dramatic scenes
+- Mute/lower sounds during stealth or suspenseful moments
+- Create dynamic audio atmosphere that matches the narrative
+- Emphasize key moments with volume swells
+- Restore normal volumes after special moments (ambient=0.2, music=0.5 is baseline)
+
 EXAMPLES OF GOOD NARRATION:
 - "The wind howls through the trees. You hear the creak of branches overhead and feel cold air on your skin. You could press onward into the forest, or take shelter and rest."
 - "Footsteps echo behind you. Something is following, its breathing heavy and ragged. [SOUND: heavy breathing] You should ready your weapon or try to hide!"
@@ -211,6 +233,25 @@ Describe in a brief, exciting way what they discovered. Focus on how the items S
 
   stripSoundCues(text) {
     return text.replace(/\[SOUND:\s*[^\]]+\]/gi, '').replace(/\s+/g, ' ').trim();
+  }
+
+  extractVolumeCues(text) {
+    const volumeCues = [];
+    // Match [VOLUME: type=value] format
+    const regex = /\[VOLUME:\s*([a-z]+)=([\d.]+)\]/gi;
+    let match;
+    while ((match = regex.exec(text)) !== null) {
+      const type = match[1].trim().toLowerCase();
+      const value = parseFloat(match[2]);
+      if (!isNaN(value) && value >= 0 && value <= 1) {
+        volumeCues.push({ type, value });
+      }
+    }
+    return volumeCues;
+  }
+
+  stripVolumeCues(text) {
+    return text.replace(/\[VOLUME:\s*[a-z]+=[\d.]+\]/gi, '').replace(/\s+/g, ' ').trim();
   }
 
   getFallbackResponse(userMessage) {
