@@ -15,8 +15,8 @@ export class AudioService {
     this.volume = {
       master: 1.0,
       effects: 0.8,
-      ambient: 0.2,  // Very quiet background ambience
-      music: 0.15
+      ambient: 0.05,  // Very quiet background ambience
+      music: 0.05
     };
   }
 
