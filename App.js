@@ -23,6 +23,7 @@ import { ElevenLabsService } from './src/services/ElevenLabsService';
 import { SubscriptionManager, TIERS } from './src/services/SubscriptionManager';
 import SubscriptionScreen from './src/screens/SubscriptionScreen';
 import BannerAdComponent from './src/components/BannerAd';
+import VideoSplashScreen from './src/components/VideoSplashScreen';
 import { OPENAI_API_KEY, ELEVENLABS_API_KEY } from '@env';
 
 // Pixel art assets
@@ -118,6 +119,7 @@ const TypewriterText = ({ text, style, onComplete, audioDuration }) => {
 };
 
 export default function App() {
+  const [showSplash, setShowSplash] = useState(true);
   const [gameEngine, setGameEngine] = useState(null);
   const [isInitialized, setIsInitialized] = useState(false);
   const [isListening, setIsListening] = useState(false);
@@ -460,6 +462,15 @@ export default function App() {
 
   // DM avatar changes based on subscription tier
   const dmAvatar = (currentTier === TIERS.ADVANCED) ? DM_AVATAR_PREMIUM : DM_AVATAR_FREE;
+
+  // Show splash screen first
+  if (showSplash) {
+    return (
+      <VideoSplashScreen 
+        onFinish={() => setShowSplash(false)}
+      />
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
