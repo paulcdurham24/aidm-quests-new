@@ -10,7 +10,8 @@ import {
   AccessibilityInfo,
   Platform,
   Image,
-  Animated
+  Animated,
+  Modal,
 } from 'react-native';
 import { GameEngine } from './src/engine/GameEngine';
 import { AIService } from './src/services/AIService';
@@ -18,11 +19,15 @@ import { SpeechService } from './src/services/SpeechService';
 import { OpenAITTSService } from './src/services/OpenAITTSService';
 import { VoiceListener } from './src/services/VoiceListener';
 import { AudioService } from './src/services/AudioService';
+import { ElevenLabsService } from './src/services/ElevenLabsService';
+import { SubscriptionManager, TIERS } from './src/services/SubscriptionManager';
+import SubscriptionScreen from './src/screens/SubscriptionScreen';
 import { OPENAI_API_KEY, ELEVENLABS_API_KEY } from '@env';
 
 // Pixel art assets
 const LOGO = require('./src/assets/logo.png');
-const DM_AVATAR = require('./src/assets/dm_avatar.png');
+const DM_AVATAR_FREE = require('./src/assets/dm_avatar.png');
+const DM_AVATAR_PREMIUM = require('./src/assets/dm_avatar_male.png');
 const PLAYER_AVATAR = require('./src/assets/player_avatar.png');
 
 // Enemy pixel art
@@ -121,6 +126,8 @@ export default function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [speechDuration, setSpeechDuration] = useState(0);
   const [currentEnemy, setCurrentEnemy] = useState(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const [currentTier, setCurrentTier] = useState(TIERS.FREE);
   const speechDurationRef = useRef(0);
 
   const aiServiceRef = useRef(null);
@@ -129,6 +136,7 @@ export default function App() {
   const audioServiceRef = useRef(null);
   const gameEngineRef = useRef(null);
   const scrollViewRef = useRef(null);
+  const subscriptionManagerRef = useRef(null);
 
   useEffect(() => {
     initializeGame();
@@ -144,33 +152,87 @@ export default function App() {
       if (audioServiceRef.current) {
         audioServiceRef.current.unloadAll();
       }
+      if (subscriptionManagerRef.current) {
+        subscriptionManagerRef.current.destroy();
+      }
     };
   }, []);
 
-  const initializeGame = async () => {
-    try {
-      const openAiKey = OPENAI_API_KEY;
-      
-      aiServiceRef.current = new AIService(openAiKey);
-      
-      // Using OpenAI TTS with "Fable" voice - British accent, expressive storyteller
-      // Cost: $0.45 per playthrough vs $6.00 with ElevenLabs (92% savings!)
-      speechServiceRef.current = new OpenAITTSService(openAiKey, 'fable');
+  // Create the right TTS service based on subscription tier
+  const createSpeechService = (tier) => {
+    const openAiKey = OPENAI_API_KEY;
 
-      // Listen for speech start to sync typewriter with audio
-      speechServiceRef.current.on('speechStart', ({ duration }) => {
+    let service;
+    if (tier === TIERS.ADVANCED && ELEVENLABS_API_KEY) {
+      // ElevenLabs "Ancient Sage Dragon Wizard" voice
+      service = new ElevenLabsService(ELEVENLABS_API_KEY, 'HAvvFKatz0uu0Fv55Riy');
+      console.log('[App] TTS: ElevenLabs Ancient Sage (Advanced tier)');
+    } else if (tier === TIERS.STANDARD || tier === TIERS.ADVANCED) {
+      // OpenAI TTS with "Fable" voice — dramatic British DM
+      service = new OpenAITTSService(openAiKey, 'fable');
+      console.log('[App] TTS: OpenAI Fable (Standard tier)');
+    } else {
+      // Free tier — device built-in TTS
+      service = new SpeechService();
+      console.log('[App] TTS: Device TTS (Free tier)');
+    }
+
+    // Hook up speech events for typewriter sync (if the service supports them)
+    if (service.on) {
+      service.on('speechStart', ({ duration }) => {
         console.log(`[App] Speech started, duration: ${duration}s`);
         speechDurationRef.current = duration;
         setSpeechDuration(duration);
       });
-
-      // Reset duration when speech ends so next message gets fresh timing
-      speechServiceRef.current.on('speechEnd', () => {
+      service.on('speechEnd', () => {
         speechDurationRef.current = 0;
       });
+    }
+
+    return service;
+  };
+
+  // Switch TTS provider live when user changes tier
+  const handleTierChanged = (newTier) => {
+    console.log('[App] Tier changed to:', newTier);
+    setCurrentTier(newTier);
+
+    // Stop any current speech
+    if (speechServiceRef.current && speechServiceRef.current.stop) {
+      speechServiceRef.current.stop();
+    }
+
+    // Create new speech service for new tier
+    const newSpeechService = createSpeechService(newTier);
+    speechServiceRef.current = newSpeechService;
+
+    // Update the engine's reference to the speech service
+    if (gameEngineRef.current) {
+      gameEngineRef.current.speechService = newSpeechService;
+    }
+  };
+
+  const initializeGame = async () => {
+    try {
+      const openAiKey = OPENAI_API_KEY;
+
+      // Initialize subscription manager first to determine tier
+      const subManager = new SubscriptionManager();
+      subscriptionManagerRef.current = subManager;
+      await subManager.initialize();
+      const tier = subManager.getTier();
+      setCurrentTier(tier);
+      console.log('[App] Subscription tier:', tier);
+
+      // Listen for tier changes (e.g. from purchase listener)
+      subManager.on('tierChanged', ({ tier: newTier }) => {
+        handleTierChanged(newTier);
+      });
       
-      // Fallback to device TTS if needed:
-      // speechServiceRef.current = new SpeechService();
+      aiServiceRef.current = new AIService(openAiKey);
+      
+      // Create TTS service based on subscription tier
+      speechServiceRef.current = createSpeechService(tier);
       
       voiceListenerRef.current = new VoiceListener();
       audioServiceRef.current = new AudioService();
@@ -260,6 +322,15 @@ export default function App() {
     engine.on('combatStarted', ({ enemy }) => {
       console.log('[App] Combat started with:', enemy.name);
       setCurrentEnemy(enemy);
+      addToLog('Enemy', null, enemy);
+    });
+
+    engine.on('enemyUpdate', ({ enemy, message }) => {
+      console.log('[App] Enemy update:', enemy.name, 'hp:', enemy.health);
+      setCurrentEnemy({ ...enemy });
+      if (message) {
+        addToLog('Enemy', message, enemy);
+      }
     });
 
     engine.on('combatEnded', ({ victory }) => {
@@ -288,7 +359,7 @@ export default function App() {
     
     // Restore ambient volume after voice input
     if (audioServiceRef.current) {
-      await audioServiceRef.current.setAmbientVolume(0.2); // Back to normal quiet level
+      await audioServiceRef.current.setAmbientVolume(0.025); // Back to normal quiet level
     }
     
     if (!gameEngineRef.current || isProcessing) {
@@ -325,8 +396,8 @@ export default function App() {
     }
   };
 
-  const addToLog = (speaker, message) => {
-    setGameLog(prev => [...prev, { speaker, message, timestamp: Date.now() }]);
+  const addToLog = (speaker, message, enemyData = null) => {
+    setGameLog(prev => [...prev, { speaker, message, timestamp: Date.now(), enemyData: enemyData ? { ...enemyData } : null }]);
     // Auto-scroll to bottom after new message
     setTimeout(() => {
       if (scrollViewRef.current) {
@@ -383,29 +454,25 @@ export default function App() {
 
   const isDM = (speaker) => speaker === 'Dungeon Master';
   const isPlayer = (speaker) => speaker === 'You';
+  const isEnemy = (speaker) => speaker === 'Enemy';
   const isLastEntry = (index) => index === gameLog.length - 1;
+
+  // DM avatar changes based on subscription tier
+  const dmAvatar = (currentTier === TIERS.ADVANCED) ? DM_AVATAR_PREMIUM : DM_AVATAR_FREE;
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Enemy portrait overlay during combat */}
-      {currentEnemy && (
-        <View style={styles.enemyOverlay}>
-          <View style={styles.enemyPortraitContainer}>
-            <Image 
-              source={ENEMY_IMAGES[currentEnemy.id]} 
-              style={styles.enemyPortrait} 
-              resizeMode="contain"
-            />
-            <Text style={styles.enemyName}>{currentEnemy.name}</Text>
-            <View style={styles.enemyHealthBar}>
-              <Text style={styles.enemyHealthText}>❤️ {currentEnemy.health}</Text>
-            </View>
-          </View>
-        </View>
-      )}
-
       {/* Header with pixel logo */}
       <View style={styles.header}>
+        <TouchableOpacity
+          style={styles.settingsButton}
+          onPress={() => setShowSettings(true)}
+          accessible={true}
+          accessibilityLabel="Settings"
+          accessibilityRole="button"
+        >
+          <Text style={styles.settingsIcon}>⚙️</Text>
+        </TouchableOpacity>
         <Image source={LOGO} style={styles.logoImage} resizeMode="contain" />
         {playerStats && (
           <View style={styles.statsBar} accessible={true} accessibilityLabel={`Health ${playerStats.health} out of ${playerStats.maxHealth}, Level ${playerStats.level}`}>
@@ -430,55 +497,79 @@ export default function App() {
             key={index}
             style={[
               styles.chatRow,
-              isPlayer(entry.speaker) && styles.chatRowPlayer
+              isPlayer(entry.speaker) && styles.chatRowPlayer,
+              isEnemy(entry.speaker) && styles.chatRowEnemy
             ]}
           >
             {/* DM Avatar - left side */}
             {isDM(entry.speaker) && (
-              <Image source={DM_AVATAR} style={styles.avatarDM} />
+              <Image source={dmAvatar} style={styles.avatarDM} />
             )}
 
-            {/* Message bubble */}
-            <View
-              style={[
-                styles.bubbleOuter,
-                isDM(entry.speaker) && styles.bubbleOuterDM,
-                isPlayer(entry.speaker) && styles.bubbleOuterPlayer
-              ]}
-            >
+            {/* Enemy bubble */}
+            {isEnemy(entry.speaker) && entry.enemyData ? (
+              <View style={styles.bubbleOuterEnemy}>
+                <View style={styles.bubbleInnerEnemy}>
+                  <View style={styles.enemyBubbleHeader}>
+                    <Text style={styles.enemySpeakerName}>{entry.enemyData.name}:</Text>
+                    <View style={styles.enemyBubbleStats}>
+                      <Text style={styles.enemyBubbleHp}>❤️ {entry.enemyData.health}</Text>
+                      <Text style={styles.enemyBubbleSwords}>⚔️</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.logMessage}>
+                    {entry.message || entry.enemyData.sounds?.appear || 'Growls....'}
+                  </Text>
+                </View>
+              </View>
+            ) : !isEnemy(entry.speaker) ? (
+              /* DM / Player bubble */
               <View
                 style={[
-                  styles.bubbleInner,
-                  isDM(entry.speaker) && styles.bubbleInnerDM,
-                  isPlayer(entry.speaker) && styles.bubbleInnerPlayer
+                  styles.bubbleOuter,
+                  isDM(entry.speaker) && styles.bubbleOuterDM,
+                  isPlayer(entry.speaker) && styles.bubbleOuterPlayer
                 ]}
               >
-                <Text
+                <View
                   style={[
-                    styles.logSpeaker,
-                    isPlayer(entry.speaker) && styles.logPlayerSpeaker
+                    styles.bubbleInner,
+                    isDM(entry.speaker) && styles.bubbleInnerDM,
+                    isPlayer(entry.speaker) && styles.bubbleInnerPlayer
                   ]}
                 >
-                  {entry.speaker}:
-                </Text>
-                {isDM(entry.speaker) && isLastEntry(index) ? (
-                  <TypewriterText
-                    text={entry.message}
-                    style={styles.logMessage}
-                    audioDuration={speechDuration}
-                    onComplete={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
-                  />
-                ) : (
                   <Text
-                    style={styles.logMessage}
-                    accessible={true}
-                    accessibilityLabel={`${entry.speaker} says: ${entry.message}`}
+                    style={[
+                      styles.logSpeaker,
+                      isPlayer(entry.speaker) && styles.logPlayerSpeaker
+                    ]}
                   >
-                    {entry.message}
+                    {entry.speaker}:
                   </Text>
-                )}
+                  {isDM(entry.speaker) && isLastEntry(index) ? (
+                    <TypewriterText
+                      text={entry.message}
+                      style={styles.logMessage}
+                      audioDuration={speechDuration}
+                      onComplete={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
+                    />
+                  ) : (
+                    <Text
+                      style={styles.logMessage}
+                      accessible={true}
+                      accessibilityLabel={`${entry.speaker} says: ${entry.message}`}
+                    >
+                      {entry.message}
+                    </Text>
+                  )}
+                </View>
               </View>
-            </View>
+            ) : null}
+
+            {/* Enemy Avatar - right side */}
+            {isEnemy(entry.speaker) && entry.enemyData && ENEMY_IMAGES[entry.enemyData.id] && (
+              <Image source={ENEMY_IMAGES[entry.enemyData.id]} style={styles.avatarEnemy} />
+            )}
 
             {/* Player Avatar - right side */}
             {isPlayer(entry.speaker) && (
@@ -502,8 +593,11 @@ export default function App() {
               accessibilityRole="button"
               accessibilityHint="Tap to speak your command"
             >
+              <Text style={styles.micEmoji}>
+                {isListening ? '🎙️' : '🎤'}
+              </Text>
               <Text style={styles.micButtonText}>
-                {isListening ? '🎙️ LISTENING...' : '🎤 SPEAK'}
+                {isListening ? 'LISTENING...' : 'SPEAK'}
               </Text>
             </TouchableOpacity>
 
@@ -565,6 +659,18 @@ export default function App() {
           </>
         )}
       </View>
+      {/* Subscription Settings Modal */}
+      <Modal
+        visible={showSettings}
+        animationType="slide"
+        onRequestClose={() => setShowSettings(false)}
+      >
+        <SubscriptionScreen
+          subscriptionManager={subscriptionManagerRef.current}
+          onClose={() => setShowSettings(false)}
+          onTierChanged={handleTierChanged}
+        />
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -574,43 +680,52 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#1a1a2e',
   },
-  // ─── Enemy Portrait Overlay ───
-  enemyOverlay: {
-    position: 'absolute',
-    top: 90,
-    right: 10,
-    zIndex: 1000,
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
-    borderWidth: 3,
-    borderColor: '#e94560',
-    padding: 8,
+  // ─── Enemy Chat Bubble ───
+  chatRowEnemy: {
+    flexDirection: 'row',
+    justifyContent: 'flex-start',
+    paddingLeft: 0,
+    paddingRight: 10,
   },
-  enemyPortraitContainer: {
+  bubbleOuterEnemy: {
+    flex: 1,
+    borderWidth: 3,
+    borderColor: '#4ecca3',
+    padding: 3,
+  },
+  bubbleInnerEnemy: {
+    backgroundColor: '#0f3460',
+    padding: 10,
+  },
+  enemyBubbleHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  enemySpeakerName: {
+    color: '#4ecca3',
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  enemyBubbleStats: {
+    flexDirection: 'row',
     alignItems: 'center',
   },
-  enemyPortrait: {
-    width: 120,
-    height: 120,
-  },
-  enemyName: {
+  enemyBubbleHp: {
     color: '#e94560',
-    fontSize: 14,
-    fontWeight: 'bold',
-    marginTop: 6,
-    textAlign: 'center',
-  },
-  enemyHealthBar: {
-    marginTop: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    backgroundColor: '#0f3460',
-    borderWidth: 2,
-    borderColor: '#4466aa',
-  },
-  enemyHealthText: {
-    color: '#f1f1f1',
     fontSize: 13,
     fontWeight: '600',
+    marginRight: 6,
+  },
+  enemyBubbleSwords: {
+    fontSize: 16,
+  },
+  avatarEnemy: {
+    width: 52,
+    height: 52,
+    marginLeft: 6,
+    marginTop: 2,
   },
   // ─── Header ───
   header: {
@@ -621,6 +736,16 @@ const styles = StyleSheet.create({
     borderBottomWidth: 3,
     borderBottomColor: '#e94560',
     alignItems: 'center',
+  },
+  settingsButton: {
+    position: 'absolute',
+    top: 8,
+    right: 12,
+    zIndex: 10,
+    padding: 6,
+  },
+  settingsIcon: {
+    fontSize: 22,
   },
   logoImage: {
     width: 180,
@@ -725,16 +850,23 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     borderColor: '#ff6b81',
     alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
     marginBottom: 10,
   },
   micButtonActive: {
     backgroundColor: '#4ecca3',
     borderColor: '#7effc8',
   },
+  micEmoji: {
+    fontSize: 24,
+    marginRight: 8,
+  },
   micButtonText: {
     color: '#fff',
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: 'bold',
+    letterSpacing: 2,
   },
   quickCommandsContainer: {
     flexDirection: 'row',
