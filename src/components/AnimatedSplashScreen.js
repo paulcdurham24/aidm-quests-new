@@ -18,40 +18,40 @@ const AnimatedSplashScreen = ({ onFinish }) => {
   const textSlideAnim = useRef(new Animated.Value(50)).current;
 
   useEffect(() => {
-    // Start animations sequence
+    // Start animations sequence - exactly 7 seconds total
     const animationSequence = Animated.sequence([
-      // Logo fade in and scale up
+      // Logo fade in and scale up (1.2 seconds)
       Animated.parallel([
         Animated.timing(fadeAnim, {
           toValue: 1,
-          duration: 800,
+          duration: 1200,
           useNativeDriver: true,
         }),
         Animated.spring(scaleAnim, {
           toValue: 1,
-          tension: 50,
-          friction: 7,
+          tension: 30,
+          friction: 8,
           useNativeDriver: true,
         }),
       ]),
-      // Logo rotation
+      // Logo rotation (1.5 seconds)
       Animated.timing(logoRotateAnim, {
         toValue: 1,
-        duration: 1000,
+        duration: 1500,
         useNativeDriver: true,
       }),
-      // Text slide up
+      // Text slide up (800ms)
       Animated.timing(textSlideAnim, {
         toValue: 0,
-        duration: 600,
+        duration: 800,
         useNativeDriver: true,
       }),
-      // Hold for a moment
-      Animated.delay(1000),
-      // Fade out
+      // Hold for display (2.7 seconds)
+      Animated.delay(2700),
+      // Fade out (800ms)
       Animated.timing(fadeAnim, {
         toValue: 0,
-        duration: 500,
+        duration: 800,
         useNativeDriver: true,
       }),
     ]);
@@ -60,10 +60,10 @@ const AnimatedSplashScreen = ({ onFinish }) => {
       onFinish();
     });
 
-    // Auto-finish after 4 seconds as fallback
+    // Auto-finish after exactly 7 seconds as fallback
     const fallbackTimer = setTimeout(() => {
       onFinish();
-    }, 4000);
+    }, 7000);
 
     return () => {
       clearTimeout(fallbackTimer);
