@@ -23,7 +23,7 @@ import { ElevenLabsService } from './src/services/ElevenLabsService';
 import { SubscriptionManager, TIERS } from './src/services/SubscriptionManager';
 import SubscriptionScreen from './src/screens/SubscriptionScreen';
 import BannerAdComponent from './src/components/BannerAd';
-import VideoSplashScreen from './src/components/VideoSplashScreen';
+import AnimatedSplashScreen from './src/components/AnimatedSplashScreen';
 import { OPENAI_API_KEY, ELEVENLABS_API_KEY } from '@env';
 
 // Pixel art assets
@@ -466,7 +466,7 @@ export default function App() {
   // Show splash screen first
   if (showSplash) {
     return (
-      <VideoSplashScreen 
+      <AnimatedSplashScreen 
         onFinish={() => setShowSplash(false)}
       />
     );
