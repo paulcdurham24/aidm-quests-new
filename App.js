@@ -22,7 +22,8 @@ import { AudioService } from './src/services/AudioService';
 import { ElevenLabsService } from './src/services/ElevenLabsService';
 import { SubscriptionManager, TIERS } from './src/services/SubscriptionManager';
 import SubscriptionScreen from './src/screens/SubscriptionScreen';
-import BannerAdComponent from './src/components/BannerAd';
+// TODO: Re-enable when Maven repository is stable
+// import BannerAdComponent from './src/components/BannerAd';
 import { OPENAI_API_KEY, ELEVENLABS_API_KEY } from '@env';
 
 // Pixel art assets
@@ -673,11 +674,11 @@ export default function App() {
         />
       </Modal>
       
-      {/* Banner Ad - only shows for Free tier */}
-      <BannerAdComponent 
+      {/* TODO: Re-enable Banner Ad when Maven repository is stable */}
+      {/* <BannerAdComponent 
         subscriptionTier={currentTier.toLowerCase()} 
         visible={!showSettings}
-      />
+      /> */}
     </SafeAreaView>
   );
 }
