@@ -6,16 +6,17 @@ NativeEventEmitter.prototype.removeListener = function (_eventType, _listener) {
   // No-op polyfill — subscriptions should use .remove() instead
 };
 
-// TODO: Re-enable Google Mobile Ads when Maven repository is stable
-// import mobileAds from 'react-native-google-mobile-ads';
-// mobileAds()
-//   .initialize()
-//   .then(adapterStatuses => {
-//     console.log('[GoogleAds] Initialization complete:', adapterStatuses);
-//   })
-//   .catch(error => {
-//     console.error('[GoogleAds] Initialization failed:', error);
-//   });
+import mobileAds from 'react-native-google-mobile-ads';
+
+// Initialize Google Mobile Ads SDK
+mobileAds()
+  .initialize()
+  .then(adapterStatuses => {
+    console.log('[GoogleAds] Initialization complete:', adapterStatuses);
+  })
+  .catch(error => {
+    console.error('[GoogleAds] Initialization failed:', error);
+  });
 
 import App from './App';
 import {name as appName} from './app.json';
